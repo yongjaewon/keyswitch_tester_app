@@ -127,7 +127,7 @@
                       appStore.update(s => ({ ...s, showTimerModal: true }));
                     }
                   }}
-                  class="relative text-white bg-gray-600 active:bg-gray-700 font-bold rounded-lg text-2xl px-5 h-16 dark:bg-gray-700 dark:active:bg-gray-800 transition-all flex items-center justify-center gap-2 border border-gray-300/90 shadow-md {state.timerActive ? 'border-4' : ''}"
+                  class="relative text-white bg-gray-600 active:bg-gray-700 font-bold rounded-lg text-3xl px-5 h-20 dark:bg-gray-700 dark:active:bg-gray-800 transition-all flex items-center justify-center gap-2 border border-gray-300/90 shadow-md {state.timerActive ? 'border-4' : ''}"
                   class:border-red-500={state.timerActive && indicatorVisible}
                   class:border-transparent={state.timerActive && !indicatorVisible}>
             {#if state.timerHours === 0 && state.timerMinutes === 0}
