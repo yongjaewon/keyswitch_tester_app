@@ -34,8 +34,13 @@
             </svg>
           </button>
         </div>
-        <div class="text-lg text-gray-600 dark:text-gray-400 mt-1">
-          {station.currentCycles.toLocaleString()} cycles
+        <div class="flex items-baseline gap-2 mt-2">
+          <div class="text-3xl font-bold text-gray-900 dark:text-white">
+            {station.currentCycles.toLocaleString()}
+          </div>
+          <div class="text-sm font-medium text-gray-500 dark:text-gray-400 tracking-wide">
+            Cycles
+          </div>
         </div>
       </div>
 

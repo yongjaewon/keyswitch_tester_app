@@ -3,6 +3,9 @@ export default {
   content: ['./src/**/*.{html,js,svelte,ts}'],
   theme: {
     extend: {
+      fontFamily: {
+        'roboto': ['Roboto', 'sans-serif'],
+      },
       animation: {
         blink: 'blink 1s steps(1, end) infinite',
         'fast-blink': 'blink 0.5s steps(1, end) infinite',
@@ -14,10 +17,5 @@ export default {
         },
       },
     },
-  },
-  plugins: [require("daisyui")],
-  daisyui: {
-    themes: ["light", "dark", "cupcake"],
-    darkTheme: "dark",
   }
 }; 

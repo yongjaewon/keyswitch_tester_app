@@ -80,14 +80,14 @@
   ];
 </script>
 
-<main class="w-[1024px] h-[600px] bg-gray-200 dark:bg-gray-900">
+<main class="w-[1024px] h-[600px] bg-gray-200 dark:bg-gray-900 p-6">
   <!-- Content area -->
-  <div class="h-full p-4 overflow-hidden">
+  <div class="h-full overflow-hidden">
     {#if state.currentPage === 'test'}
       <!-- Main content area -->
-      <div class="h-full flex gap-4">
+      <div class="h-full flex gap-6">
         <!-- Left side - Station cards -->
-        <div class="flex-1 flex flex-col gap-2">
+        <div class="flex-1 flex flex-col gap-4">
           {#each state.stations as station, index}
             <StationCard
               {station}
@@ -229,28 +229,28 @@
           </button>
         </div>
       </div>
-
-      <!-- Modals -->
-      {#if state.showSettingsModal}
-        <SettingsModal />
-      {/if}
-
-      {#if state.showTimerModal}
-        <TimerModal />
-      {/if}
-
-      {#if state.showStationSettingsModal && state.selectedStation}
-        <StationSettingsModal station={state.selectedStation} />
-      {/if}
     {:else}
       <!-- Data page content -->
-      <div class="h-full bg-white dark:bg-gray-800 rounded-lg border border-gray-300/90 dark:border-gray-700 p-4">
+      <div class="h-full bg-white dark:bg-gray-800 rounded-lg border border-gray-300/90 dark:border-gray-700 p-6">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">Test Data</h1>
         <p class="text-gray-600 dark:text-gray-400">Data visualization coming soon...</p>
       </div>
     {/if}
   </div>
 </main>
+
+<!-- Modals -->
+{#if state.showSettingsModal}
+  <SettingsModal />
+{/if}
+
+{#if state.showTimerModal}
+  <TimerModal />
+{/if}
+
+{#if state.showStationSettingsModal && state.selectedStation}
+  <StationSettingsModal station={state.selectedStation} />
+{/if}
 
 <style>
   /* Force the page to be exactly 1024x600 */
