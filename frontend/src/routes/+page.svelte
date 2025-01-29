@@ -19,7 +19,7 @@
   });
 
   // Add animation class for timer indicator
-  onMount(() => {
+  onMount(async () => {
     // Initialize WebSocket connection
     initializeWebSocket();
 
@@ -29,9 +29,8 @@
 
     // Load initial settings from the backend
     try {
-      api.getSettings().then(settings => {
-        actions.saveSettings(settings);
-      });
+      const settings = await api.getSettings();
+      actions.saveSettings(settings);
     } catch (error) {
       console.error('Error loading settings:', error);
     }
@@ -55,10 +54,10 @@
   // Watch for changes in failures and cycles and automatically disable station at thresholds
   $: {
     state.stations.forEach(station => {
-      if ((station.switchFailures >= state.switchFailureThreshold || 
-           station.motorFailures >= state.motorFailureThreshold ||
+      if ((station.actuationFailures >= state.switchFailureThreshold || 
+           station.mechanicalFailures >= state.motorFailureThreshold ||
            station.currentCycles >= state.cycleLimit) && 
-          station.enabled) {
+          station.connected) {
         actions.toggleStation(station.id);
       }
     });
@@ -81,14 +80,14 @@
   ];
 </script>
 
-<main class="w-[1024px] h-[600px] bg-gray-200 dark:bg-gray-900 p-6">
+<main class="w-[1024px] h-[600px] bg-gray-200 dark:bg-gray-900">
   <!-- Content area -->
-  <div class="h-full flex flex-col">
+  <div class="h-full p-4 overflow-hidden">
     {#if state.currentPage === 'test'}
       <!-- Main content area -->
-      <div class="h-full flex gap-6">
+      <div class="h-full flex gap-4">
         <!-- Left side - Station cards -->
-        <div class="flex-1 flex flex-col gap-4">
+        <div class="flex-1 flex flex-col gap-2">
           {#each state.stations as station, index}
             <StationCard
               {station}
@@ -103,7 +102,7 @@
         </div>
 
         <!-- Right side - Controls -->
-        <div class="w-[340px] flex flex-col gap-6">
+        <div class="w-[340px] flex flex-col gap-4">
           <!-- Start/Stop button -->
           <button type="button" 
                   on:click={actions.toggleRunning}
@@ -254,15 +253,18 @@
 </main>
 
 <style>
-  main {
+  /* Force the page to be exactly 1024x600 */
+  :global(html, body) {
     width: 1024px;
     height: 600px;
     overflow: hidden;
+    margin: 0;
+    padding: 0;
   }
 
   /* Remove focus outlines globally */
   :global(*:focus) {
-    outline: none;
+    outline: none !important;
   }
 
   @keyframes fastBlink {

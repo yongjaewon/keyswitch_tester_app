@@ -42,11 +42,10 @@
       <div class="grid grid-cols-2 gap-4">
         <!-- Cutoff Voltage -->
         <div class="flex flex-col gap-1">
-          <label for="cutoffVoltage" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
             Cutoff Voltage (V)
           </label>
           <input
-            id="cutoffVoltage"
             type="number"
             bind:value={editingSettings.cutoffVoltage}
             min="0"
@@ -57,11 +56,10 @@
 
         <!-- Motor Current Threshold -->
         <div class="flex flex-col gap-1">
-          <label for="motorCurrentThreshold" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
             Motor Current Threshold (A)
           </label>
           <input
-            id="motorCurrentThreshold"
             type="number"
             bind:value={editingSettings.motorCurrentThreshold}
             min="0"
