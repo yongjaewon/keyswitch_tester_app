@@ -86,7 +86,7 @@
         <label class="relative inline-flex items-center cursor-pointer">
           <input type="checkbox" 
                  checked={station.enabled}
-                 on:change={() => actions.toggleStation(station.id)}
+                 on:change={(e) => actions.setStationState(station.id, e.currentTarget.checked)}
                  class="sr-only peer">
           <div class="w-[72px] h-10 bg-gray-300 border border-gray-300 rounded-full peer dark:bg-gray-600 dark:border-gray-600 peer-checked:after:translate-x-8 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:border-gray-300 after:rounded-full after:h-9 after:w-9 after:transition-all peer-checked:bg-green-600 peer-checked:border-green-600"></div>
         </label>

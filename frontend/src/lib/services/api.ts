@@ -47,7 +47,7 @@ const messageHandlers: { [key: string]: MessageHandler[] } = {};
 export function initializeWebSocket() {
   if (ws) return;
 
-  ws = new WebSocket('ws://localhost:8000/ws');
+  ws = new WebSocket('ws://192.168.75.77:8000/ws');
 
   ws.onopen = () => {
     console.log('WebSocket connected');
@@ -55,18 +55,29 @@ export function initializeWebSocket() {
   };
 
   ws.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    const handlers = messageHandlers[message.type];
-    if (handlers) {
-      handlers.forEach(handler => handler(message.data));
+    try {
+      const message = JSON.parse(event.data);
+      const handlers = messageHandlers[message.type];
+      if (handlers) {
+        handlers.forEach(handler => handler(message.data));
+      }
+    } catch (e) {
+      console.error('Error processing WebSocket message:', e);
     }
   };
 
   ws.onclose = () => {
-    console.log('WebSocket connection closed');
+    console.log('WebSocket disconnected');
     ws = null;
-    // Try to reconnect after 5 seconds
-    setTimeout(initializeWebSocket, 5000);
+
+    // Try to reconnect if we haven't exceeded max attempts
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      reconnectAttempts++;
+      console.log(`Reconnecting... Attempt ${reconnectAttempts}`);
+      setTimeout(initializeWebSocket, RECONNECT_DELAY);
+    } else {
+      console.error('Max reconnection attempts reached');
+    }
   };
 
   ws.onerror = (error) => {
@@ -80,6 +91,9 @@ export function onMessage(type: string, handler: MessageHandler) {
     messageHandlers[type] = [];
   }
   messageHandlers[type].push(handler);
+  return () => {
+    messageHandlers[type] = messageHandlers[type].filter(h => h !== handler);
+  };
 }
 
 // Send message to server
@@ -94,13 +108,14 @@ export function sendMessage(type: string, data: any) {
 }
 
 // API endpoints
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://192.168.75.77:8000/api';
 
 // HTTP request helper
 async function fetchWithError(url: string, options: RequestInit = {}) {
   try {
     const response = await fetch(url, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
@@ -123,20 +138,25 @@ async function fetchWithError(url: string, options: RequestInit = {}) {
 export const api = {
   // Authentication
   async authenticate(pin: string): Promise<boolean> {
-    const response = await fetch(`${API_BASE_URL}/auth?pin=${pin}`);
+    const response = await fetch(`${API_BASE_URL}/auth?pin=${pin}`, {
+      credentials: 'include'
+    });
     const data = await response.json();
     return data.success;
   },
 
   // Settings
   async getSettings(): Promise<Partial<AppState>> {
-    const response = await fetch(`${API_BASE_URL}/settings`);
+    const response = await fetch(`${API_BASE_URL}/settings`, {
+      credentials: 'include'
+    });
     return response.json();
   },
 
   async updateSettings(settings: Partial<AppState>): Promise<boolean> {
     const response = await fetch(`${API_BASE_URL}/settings`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -148,7 +168,9 @@ export const api = {
 
   // System status
   async getStatus(): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/status`);
+    const response = await fetch(`${API_BASE_URL}/status`, {
+      credentials: 'include'
+    });
     return response.json();
   },
 
@@ -156,6 +178,7 @@ export const api = {
   async startTest(): Promise<boolean> {
     const response = await fetch(`${API_BASE_URL}/test/start`, {
       method: 'POST',
+      credentials: 'include'
     });
     const data = await response.json();
     return data.success;
@@ -164,24 +187,28 @@ export const api = {
   async stopTest(): Promise<boolean> {
     const response = await fetch(`${API_BASE_URL}/test/stop`, {
       method: 'POST',
+      credentials: 'include'
     });
     const data = await response.json();
     return data.success;
   },
 
   // Station control
-  async toggleStation(stationId: number): Promise<boolean> {
-    const response = await fetch(`${API_BASE_URL}/station/${stationId}/toggle`, {
+  async setStationState(stationId: number, enabled: boolean): Promise<void> {
+    await fetchWithError(`${API_BASE_URL}/station/${stationId}/state`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ enabled })
     });
-    const data = await response.json();
-    return data.success;
   },
 
   // Timer
   async setTimer(hours: number, minutes: number): Promise<boolean> {
     const response = await fetch(`${API_BASE_URL}/timer`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },

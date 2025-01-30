@@ -54,34 +54,82 @@ const initialState: AppState = {
   timerActive: false,
   selectedStation: null,
   supplyVoltage: 13.2,
-  stations: [1, 2, 3, 4].map(num => ({
-    id: num,
-    enabled: num === 1 || num === 2,
-    motorFailures: num === 1 ? 0 : num === 2 ? 3 : num === 3 ? 8 : 12,
-    switchFailures: num === 1 ? 0 : num === 2 ? 4 : num === 3 ? 9 : 10,
-    currentCycles: num === 1 ? 102235 : num === 2 ? 206 : num === 3 ? 4 : 25918,
-    motorCurrent: num === 1 ? "120.0 A" : num === 2 ? "85.5 A" : num === 3 ? "105.2 A" : "45.8 A",
-    switchCurrent: num === 1 ? "6.2 A" : num === 2 ? "3.8 A" : num === 3 ? "5.5 A" : "2.1 A"
+  stations: [1, 2, 3, 4].map(id => ({
+    id,
+    enabled: false,
+    motorFailures: 0,
+    switchFailures: 0,
+    currentCycles: 0,
+    motorCurrent: "0.0 A",
+    switchCurrent: "0.0 A"
   }))
 };
 
 // Create the store
 export const appStore = writable<AppState>(initialState);
 
+// Track pending state changes
+let pendingStateChanges: { [key: string]: boolean } = {};
+
 // Register WebSocket message handlers
-onMessage('status_update', (data) => {
-  appStore.update(state => {
-    // Only update if we're not in a modal
-    if (state.showTimerModal || state.showSettingsModal || state.showStationSettingsModal) {
-      return state;
-    }
-    return {
-      ...state,
-      supplyVoltage: data.supplyVoltage,
-      masterEnabled: data.masterEnabled,
-      stations: data.stations
-    };
-  });
+onMessage('status_update', (data: {
+    supplyVoltage: number;
+    masterEnabled: boolean;
+    stations: {
+        id: number;
+        enabled: boolean;
+        motorFailures: number;
+        switchFailures: number;
+        currentCycles: number;
+        motorCurrent: number;
+        switchCurrent: number;
+    }[];
+}) => {
+    appStore.update(state => {
+        // Only update if we're not in a modal
+        if (state.showTimerModal || state.showSettingsModal || state.showStationSettingsModal) {
+            return state;
+        }
+
+        // Don't update masterEnabled if we have a pending change
+        const masterEnabled = pendingStateChanges['master_enabled'] ? state.masterEnabled : data.masterEnabled;
+
+        // Update stations with new data
+        const updatedStations = state.stations.map(station => {
+            const newData = data.stations.find(s => s.id === station.id);
+            if (newData) {
+                // If we have a pending state change for this station, don't update its enabled state
+                const pendingKey = `station_${station.id}`;
+                if (pendingStateChanges[pendingKey]) {
+                    return {
+                        ...station,
+                        motorFailures: newData.motorFailures,
+                        switchFailures: newData.switchFailures,
+                        currentCycles: newData.currentCycles,
+                        motorCurrent: `${newData.motorCurrent.toFixed(1)} A`,
+                        switchCurrent: `${newData.switchCurrent.toFixed(1)} A`
+                    };
+                }
+                return {
+                    ...station,
+                    enabled: newData.enabled,
+                    motorFailures: newData.motorFailures,
+                    switchFailures: newData.switchFailures,
+                    currentCycles: newData.currentCycles,
+                    motorCurrent: `${newData.motorCurrent.toFixed(1)} A`,
+                    switchCurrent: `${newData.switchCurrent.toFixed(1)} A`
+                };
+            }
+            return station;
+        });
+
+        return {
+            ...state,
+            supplyVoltage: data.supplyVoltage,
+            masterEnabled,
+            stations: updatedStations
+        };
+    });
 });
 
 onMessage('timerUpdate', (data) => {
@@ -105,31 +153,51 @@ export const actions = {
     const state = get(appStore);
     const newMasterEnabled = !state.masterEnabled;
 
+    // Set pending state change
+    pendingStateChanges['master_enabled'] = true;
+
+    // Update state optimistically
+    appStore.update(state => ({
+      ...state,
+      masterEnabled: newMasterEnabled
+    }));
+
     try {
-      // Call the API first
+      // Call the API
       if (newMasterEnabled) {
         await api.startTest();
       } else {
         await api.stopTest();
       }
 
-      // Update state only after successful API call
-      appStore.update(state => {
-        const newState = { ...state, masterEnabled: newMasterEnabled };
-        if (!newState.masterEnabled && newState.timerActive) {
-          newState.timerActive = false;
-          newState.timerHours = 0;
-          newState.timerMinutes = 0;
-          newState.timerSeconds = 0;
-        }
-        return newState;
-      });
+      // Clear pending state after successful API call
+      delete pendingStateChanges['master_enabled'];
+
+      // Update timer state if stopping
+      if (!newMasterEnabled) {
+        appStore.update(state => ({
+          ...state,
+          timerActive: false,
+          timerHours: 0,
+          timerMinutes: 0,
+          timerSeconds: 0
+        }));
+      }
     } catch (error) {
       console.error('Error toggling test state:', error);
+      // Revert state on error
+      delete pendingStateChanges['master_enabled'];
+      appStore.update(state => ({
+        ...state,
+        masterEnabled: !newMasterEnabled
+      }));
     }
   },
 
-  toggleStation: async (stationId: number) => {
+  setStationState: async (stationId: number, enabled: boolean) => {
+    const pendingKey = `station_${stationId}`;
+    pendingStateChanges[pendingKey] = true;
+    
     let previousState: Station | undefined;
     
     appStore.update(state => {
@@ -138,17 +206,19 @@ export const actions = {
         ...state,
         stations: state.stations.map(station => 
           station.id === stationId 
-            ? { ...station, enabled: !station.enabled }
+            ? { ...station, enabled: enabled }
             : station
         )
       };
     });
 
-    // Call the API
     try {
-      await api.toggleStation(stationId);
+      await api.setStationState(stationId, enabled);
+      // Clear the pending state after a successful update
+      delete pendingStateChanges[pendingKey];
     } catch (error) {
-      console.error('Error toggling station:', error);
+      console.error('Error setting station state:', error);
+      delete pendingStateChanges[pendingKey];
       // Revert the state if the API call fails
       appStore.update(state => ({
         ...state,
