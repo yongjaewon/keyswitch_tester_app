@@ -25,9 +25,7 @@ export interface AppState {
   motorCurrentThreshold: number;
   switchCurrentThreshold: number;
   cyclesPerMinute: number;
-  timerHours: number;
-  timerMinutes: number;
-  timerSeconds: number;
+  timerEndTime: string | null;
   timerActive: boolean;
   stations: Station[];
   selectedStation: Station | null;
@@ -48,9 +46,7 @@ const initialState: AppState = {
   motorCurrentThreshold: 100,
   switchCurrentThreshold: 5,
   cyclesPerMinute: 6,
-  timerHours: 0,
-  timerMinutes: 0,
-  timerSeconds: 0,
+  timerEndTime: null,
   timerActive: false,
   selectedStation: null,
   supplyVoltage: 13.2,
@@ -75,6 +71,8 @@ let pendingStateChanges: { [key: string]: boolean } = {};
 onMessage('status_update', (data: {
     supplyVoltage: number;
     masterEnabled: boolean;
+    timerActive: boolean;
+    timerEndTime: string | null;
     stations: {
         id: number;
         enabled: boolean;
@@ -86,20 +84,27 @@ onMessage('status_update', (data: {
     }[];
 }) => {
     appStore.update(state => {
-        // Only update if we're not in a modal
-        if (state.showTimerModal || state.showSettingsModal || state.showStationSettingsModal) {
-            return state;
-        }
-
-        // Update stations with new data
-        const updatedStations = state.stations.map(station => {
-            const newData = data.stations.find(s => s.id === station.id);
-            if (newData) {
-                // If we have a pending state change for this station, don't update its enabled state
-                const pendingKey = `station_${station.id}`;
-                if (pendingStateChanges[pendingKey]) {
+        // Update stations with new data, but only if not in a modal
+        const updatedStations = state.showTimerModal || state.showSettingsModal || state.showStationSettingsModal
+            ? state.stations
+            : state.stations.map(station => {
+                const newData = data.stations.find(s => s.id === station.id);
+                if (newData) {
+                    // If we have a pending state change for this station, don't update its enabled state
+                    const pendingKey = `station_${station.id}`;
+                    if (pendingStateChanges[pendingKey]) {
+                        return {
+                            ...station,
+                            motorFailures: newData.motorFailures,
+                            switchFailures: newData.switchFailures,
+                            currentCycles: newData.currentCycles,
+                            motorCurrent: `${newData.motorCurrent.toFixed(1)} A`,
+                            switchCurrent: `${newData.switchCurrent.toFixed(1)} A`
+                        };
+                    }
                     return {
                         ...station,
+                        enabled: newData.enabled,
                         motorFailures: newData.motorFailures,
                         switchFailures: newData.switchFailures,
                         currentCycles: newData.currentCycles,
@@ -107,41 +112,19 @@ onMessage('status_update', (data: {
                         switchCurrent: `${newData.switchCurrent.toFixed(1)} A`
                     };
                 }
-                return {
-                    ...station,
-                    enabled: newData.enabled,
-                    motorFailures: newData.motorFailures,
-                    switchFailures: newData.switchFailures,
-                    currentCycles: newData.currentCycles,
-                    motorCurrent: `${newData.motorCurrent.toFixed(1)} A`,
-                    switchCurrent: `${newData.switchCurrent.toFixed(1)} A`
-                };
-            }
-            return station;
-        });
+                return station;
+            });
 
+        // Always update timer and system state, regardless of modal state
         return {
             ...state,
             supplyVoltage: data.supplyVoltage,
             masterEnabled: data.masterEnabled,
+            timerActive: data.timerActive,
+            timerEndTime: data.timerEndTime,
             stations: updatedStations
         };
     });
-});
-
-onMessage('timerUpdate', (data) => {
-  appStore.update(state => {
-    // Only update if we're not in timer modal
-    if (state.showTimerModal) {
-      return state;
-    }
-    return {
-      ...state,
-      timerHours: data.hours,
-      timerMinutes: data.minutes,
-      timerSeconds: data.seconds
-    };
-  });
 });
 
 // Store actions
@@ -163,9 +146,7 @@ export const actions = {
         const newState = { ...state, masterEnabled: newMasterEnabled };
         if (!newState.masterEnabled && newState.timerActive) {
           newState.timerActive = false;
-          newState.timerHours = 0;
-          newState.timerMinutes = 0;
-          newState.timerSeconds = 0;
+          newState.timerEndTime = null;
         }
         return newState;
       });
@@ -211,40 +192,6 @@ export const actions = {
     }
   },
 
-  updateTimer: async () => {
-    const state = get(appStore);
-    if (!state.timerActive) return;
-
-    let { timerHours, timerMinutes, timerSeconds } = state;
-    
-    if (timerSeconds > 0) {
-      timerSeconds--;
-    } else if (timerMinutes > 0) {
-      timerMinutes--;
-      timerSeconds = 59;
-    } else if (timerHours > 0) {
-      timerHours--;
-      timerMinutes = 59;
-      timerSeconds = 59;
-    } else {
-      appStore.update(state => ({ ...state, timerActive: false }));
-      return;
-    }
-
-    // Update both frontend and backend
-    try {
-      await api.setTimer(timerHours, timerMinutes);
-      appStore.update(state => ({ 
-        ...state, 
-        timerHours, 
-        timerMinutes, 
-        timerSeconds 
-      }));
-    } catch (error) {
-      console.error('Error updating timer:', error);
-    }
-  },
-
   saveSettings: async (settings: Partial<AppState>) => {
     const previousState = get(appStore);
     
@@ -271,29 +218,33 @@ export const actions = {
   },
 
   setTimer: async (hours: number, minutes: number) => {
-    const previousState = get(appStore);
-    
     try {
-      // Call APIs first
-      await api.setTimer(hours, minutes);
-      if (hours > 0 || minutes > 0) {
-        await api.startTest();
+      const success = await api.setTimer(hours, minutes);
+      if (success) {
+        appStore.update(state => ({
+          ...state,
+          showTimerModal: false,
+          timerActive: hours > 0 || minutes > 0
+          // Let the backend's timerEndTime come through WebSocket
+        }));
       }
-
-      // Update state only after successful API calls
-      appStore.update(state => ({
-        ...state,
-        timerHours: hours,
-        timerMinutes: minutes,
-        timerSeconds: 0,
-        timerActive: hours > 0 || minutes > 0,
-        showTimerModal: false,
-        masterEnabled: (hours > 0 || minutes > 0) ? true : state.masterEnabled
-      }));
     } catch (error) {
       console.error('Error setting timer:', error);
-      // Revert the state if the API call fails
-      appStore.update(() => previousState);
+    }
+  },
+
+  clearTimer: async () => {
+    try {
+      const success = await api.setTimer(0, 0);
+      if (success) {
+        appStore.update(state => ({
+          ...state,
+          timerActive: false,
+          timerEndTime: null
+        }));
+      }
+    } catch (error) {
+      console.error('Error clearing timer:', error);
     }
   }
 }; 

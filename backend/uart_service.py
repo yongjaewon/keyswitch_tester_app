@@ -87,4 +87,25 @@ class UARTService:
             return True
         except Exception as e:
             logger.error(f"Error sending stop command to Arduino: {str(e)}")
+            return False
+
+    async def update_settings(self, settings: dict) -> bool:
+        """Send updated settings to Arduino"""
+        if not self.connected or not self.serial:
+            return False
+            
+        try:
+            # Format: {"settings": {"speed": 6, "cutoff": 11.1}}
+            command = {
+                "settings": {
+                    "speed": settings["cyclesPerMinute"],
+                    "cutoff": settings["cutoffVoltage"]
+                }
+            }
+            
+            command_str = json.dumps(command) + '\n'
+            self.serial.write(command_str.encode('utf-8'))
+            return True
+        except Exception as e:
+            logger.error(f"Error sending settings to Arduino: {str(e)}")
             return False 

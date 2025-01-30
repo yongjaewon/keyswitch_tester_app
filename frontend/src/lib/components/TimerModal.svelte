@@ -8,8 +8,18 @@
 
   // Subscribe to store to initialize editing values
   appStore.subscribe((state: AppState) => {
-    editingHours = state.timerHours;
-    editingMinutes = state.timerMinutes;
+    if (state.timerEndTime) {
+      const endTime = new Date(state.timerEndTime);
+      const now = new Date();
+      const diffMs = endTime.getTime() - now.getTime();
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      editingHours = diffHours;
+      editingMinutes = diffMinutes;
+    } else {
+      editingHours = 0;
+      editingMinutes = 0;
+    }
   });
 
   function closeModal() {

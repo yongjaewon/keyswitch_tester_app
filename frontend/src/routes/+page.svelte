@@ -11,15 +11,54 @@
 
   let state: AppState;
   let indicatorVisible = true;
+  let remainingTime: { hours: number; minutes: number; seconds: number } = { hours: 0, minutes: 0, seconds: 0 };
   let timer: ReturnType<typeof setInterval> | null = null;
 
   // Subscribe to store
   appStore.subscribe(newState => {
     state = newState;
+    // Always update remaining time when state changes
+    updateRemainingTime();
   });
 
+  function updateRemainingTime() {
+    if (!state.timerEndTime) {
+      remainingTime = { hours: 0, minutes: 0, seconds: 0 };
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      return;
+    }
+    
+    try {
+      // Both endTimeMs and Date.now() are in UTC milliseconds
+      const endTimeMs = Date.parse(state.timerEndTime);  // Backend sends UTC with 'Z' suffix
+      const nowMs = Date.now();  // UTC milliseconds
+      const diffMs = endTimeMs - nowMs;
+      
+      if (diffMs <= 0) {
+        remainingTime = { hours: 0, minutes: 0, seconds: 0 };
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+        return;
+      }
+      
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+      
+      remainingTime = { hours, minutes, seconds };
+    } catch (error) {
+      console.error('Error updating remaining time:', error);
+      remainingTime = { hours: 0, minutes: 0, seconds: 0 };
+    }
+  }
+
   // Add animation class for timer indicator
-  onMount(async () => {
+  onMount(() => {
     // Initialize WebSocket connection
     initializeWebSocket();
 
@@ -27,13 +66,22 @@
       indicatorVisible = !indicatorVisible;
     }, 1000);
 
+    // Start timer update interval
+    timer = setInterval(() => {
+      if (state.timerActive) {
+        updateRemainingTime();
+      }
+    }, 1000);
+
     // Load initial settings from the backend
-    try {
-      const settings = await api.getSettings();
-      actions.saveSettings(settings);
-    } catch (error) {
-      console.error('Error loading settings:', error);
-    }
+    (async () => {
+      try {
+        const settings = await api.getSettings();
+        actions.saveSettings(settings);
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    })();
 
     return () => {
       clearInterval(indicatorInterval);
@@ -43,9 +91,7 @@
 
   // Watch for timer state changes
   $: if (state.timerActive && !timer) {
-    timer = setInterval(async () => {
-      await actions.updateTimer();
-    }, 1000);
+    timer = setInterval(updateRemainingTime, 1000);
   } else if (!state.timerActive && timer) {
     clearInterval(timer);
     timer = null;
@@ -54,11 +100,11 @@
   // Watch for changes in failures and cycles and automatically disable station at thresholds
   $: {
     state.stations.forEach(station => {
-      if ((station.actuationFailures >= state.switchFailureThreshold || 
-           station.mechanicalFailures >= state.motorFailureThreshold ||
+      if ((station.motorFailures >= state.motorFailureThreshold || 
+           station.switchFailures >= state.switchFailureThreshold ||
            station.currentCycles >= state.cycleLimit) && 
-          station.connected) {
-        actions.toggleStation(station.id);
+          station.enabled) {
+        actions.setStationState(station.id, false);
       }
     });
   }
@@ -116,13 +162,7 @@
           <button type="button" 
                   on:click={() => {
                     if (state.timerActive) {
-                      appStore.update(s => ({
-                        ...s,
-                        timerActive: false,
-                        timerHours: 0,
-                        timerMinutes: 0,
-                        timerSeconds: 0
-                      }));
+                      actions.clearTimer();
                     } else {
                       appStore.update(s => ({ ...s, showTimerModal: true }));
                     }
@@ -130,13 +170,13 @@
                   class="relative text-white bg-gray-600 active:bg-gray-700 font-bold rounded-lg text-3xl px-5 h-20 dark:bg-gray-700 dark:active:bg-gray-800 transition-all flex items-center justify-center gap-2 border border-gray-300/90 shadow-md {state.timerActive ? 'border-4' : ''}"
                   class:border-red-500={state.timerActive && indicatorVisible}
                   class:border-transparent={state.timerActive && !indicatorVisible}>
-            {#if state.timerHours === 0 && state.timerMinutes === 0}
+            {#if !state.timerEndTime}
               Set Timer
             {:else}
               <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
               </svg>
-              {formatTime(state.timerHours, state.timerMinutes, state.timerSeconds)}
+              {formatTime(remainingTime.hours, remainingTime.minutes, remainingTime.seconds)}
               {#if state.timerActive}
                 <div class="absolute top-2 right-2 w-3 h-3 rounded-full bg-red-500" class:opacity-0={!indicatorVisible}></div>
               {/if}

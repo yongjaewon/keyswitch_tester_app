@@ -25,9 +25,7 @@ interface SystemState {
   masterEnabled: boolean;
   supplyVoltage: number;
   timerActive: boolean;
-  timerHours: number;
-  timerMinutes: number;
-  timerSeconds: number;
+  timerEndTime: string | null;  // UTC ISO string
   stations: Station[];
 }
 
@@ -206,15 +204,13 @@ export const api = {
 
   // Timer
   async setTimer(hours: number, minutes: number): Promise<boolean> {
-    const response = await fetch(`${API_BASE_URL}/timer`, {
+    const response = await fetchWithError(`${API_BASE_URL}/timer`, {
       method: 'POST',
-      credentials: 'include',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ hours, minutes }),
+      body: JSON.stringify({ hours, minutes })
     });
-    const data = await response.json();
-    return data.success;
+    return response.success;
   },
 }; 

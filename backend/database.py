@@ -68,9 +68,7 @@ def init_db():
                 supplyVoltage=13.2,
                 masterEnabled=False,
                 timerActive=False,
-                timerHours=0,
-                timerMinutes=0,
-                timerSeconds=0
+                timerEndTime=None
             )
             db.add(initial_state)
             
@@ -92,7 +90,6 @@ def init_db():
             logger.info("Database initialized successfully!")
         else:
             logger.info("Database already initialized, skipping...")
-            
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
         raise
