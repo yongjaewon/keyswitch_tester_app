@@ -91,9 +91,6 @@ onMessage('status_update', (data: {
             return state;
         }
 
-        // Don't update masterEnabled if we have a pending change
-        const masterEnabled = pendingStateChanges['master_enabled'] ? state.masterEnabled : data.masterEnabled;
-
         // Update stations with new data
         const updatedStations = state.stations.map(station => {
             const newData = data.stations.find(s => s.id === station.id);
@@ -126,7 +123,7 @@ onMessage('status_update', (data: {
         return {
             ...state,
             supplyVoltage: data.supplyVoltage,
-            masterEnabled,
+            masterEnabled: data.masterEnabled,
             stations: updatedStations
         };
     });
@@ -153,44 +150,27 @@ export const actions = {
     const state = get(appStore);
     const newMasterEnabled = !state.masterEnabled;
 
-    // Set pending state change
-    pendingStateChanges['master_enabled'] = true;
-
-    // Update state optimistically
-    appStore.update(state => ({
-      ...state,
-      masterEnabled: newMasterEnabled
-    }));
-
     try {
-      // Call the API
+      // Call the API first
       if (newMasterEnabled) {
         await api.startTest();
       } else {
         await api.stopTest();
       }
 
-      // Clear pending state after successful API call
-      delete pendingStateChanges['master_enabled'];
-
-      // Update timer state if stopping
-      if (!newMasterEnabled) {
-        appStore.update(state => ({
-          ...state,
-          timerActive: false,
-          timerHours: 0,
-          timerMinutes: 0,
-          timerSeconds: 0
-        }));
-      }
+      // Update state only after successful API call
+      appStore.update(state => {
+        const newState = { ...state, masterEnabled: newMasterEnabled };
+        if (!newState.masterEnabled && newState.timerActive) {
+          newState.timerActive = false;
+          newState.timerHours = 0;
+          newState.timerMinutes = 0;
+          newState.timerSeconds = 0;
+        }
+        return newState;
+      });
     } catch (error) {
       console.error('Error toggling test state:', error);
-      // Revert state on error
-      delete pendingStateChanges['master_enabled'];
-      appStore.update(state => ({
-        ...state,
-        masterEnabled: !newMasterEnabled
-      }));
     }
   },
 
