@@ -216,9 +216,10 @@ async def monitor_status():
                     
                     # Check if timer has expired
                     if system_state.timerActive and system_state.timerEndTime:
-                        current_time = datetime.now(timezone.utc)
-                        logger.info(f"Checking timer expiration - Current time: {current_time.isoformat()}, End time: {system_state.timerEndTime.isoformat()}")
-                        if current_time >= system_state.timerEndTime:
+                        current_time = datetime.now(timezone.utc).replace(microsecond=0)
+                        timer_end_time = system_state.timerEndTime.replace(tzinfo=timezone.utc)
+                        logger.info(f"Checking timer expiration - Current time: {current_time.isoformat()}, End time: {timer_end_time.isoformat()}")
+                        if current_time >= timer_end_time:
                             logger.info("Timer expired, stopping system")
                             system_state.masterEnabled = False
                             system_state.timerActive = False
@@ -233,7 +234,7 @@ async def monitor_status():
                             await broadcast_status_update(db)
                             continue
                         else:
-                            logger.debug(f"Timer not expired yet. Time remaining: {(system_state.timerEndTime - current_time).total_seconds()} seconds")
+                            logger.debug(f"Timer not expired yet. Time remaining: {(timer_end_time - current_time).total_seconds()} seconds")
 
                     # Process Arduino data if available
                     if arduino_data:

@@ -2,12 +2,14 @@
   import { appStore, actions } from '../stores/appStore';
   import type { AppState } from '../stores/appStore';
   import { TIMER_SETTINGS } from '../constants';
+  import { onMount } from 'svelte';
 
   let editingHours = 0;
   let editingMinutes = 0;
 
-  // Subscribe to store to initialize editing values
-  appStore.subscribe((state: AppState) => {
+  // Initialize values when modal opens
+  onMount(() => {
+    const state = $appStore;
     if (state.timerEndTime) {
       const endTime = new Date(state.timerEndTime);
       const now = new Date();
@@ -39,13 +41,11 @@
   }
 
   function incrementMinutes() {
-    editingMinutes = (editingMinutes + TIMER_SETTINGS.MINUTE_STEP) % 60;
+    editingMinutes = (editingMinutes + 1) % 60;
   }
 
   function decrementMinutes() {
-    editingMinutes = editingMinutes >= TIMER_SETTINGS.MINUTE_STEP ? 
-      editingMinutes - TIMER_SETTINGS.MINUTE_STEP : 
-      60 - TIMER_SETTINGS.MINUTE_STEP;
+    editingMinutes = editingMinutes > 0 ? editingMinutes - 1 : 59;
   }
 </script>
 
