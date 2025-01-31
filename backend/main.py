@@ -38,10 +38,38 @@ UPDATE_FREQUENCY = float(os.getenv("UPDATE_FREQUENCY", "0.5"))
 MAX_TIMER_HOURS = int(os.getenv("MAX_TIMER_HOURS", "24"))
 
 # Initialize FastAPI app
+background_tasks = []
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    # Initialize database
+    init_db()
+    # Connect to Arduino
+    if not await uart.connect():
+        logger.error("Failed to connect to Arduino!")
+    # Start background tasks
+    background_tasks.append(asyncio.create_task(monitor_status()))
+    background_tasks.append(asyncio.create_task(send_arduino_state()))
+    
+    logger.info("Application startup complete")
+    
+    yield  # Server is running
+    
+    # Shutdown
+    logger.info("Shutting down application...")
+    # Cancel all background tasks
+    for task in background_tasks:
+        task.cancel()
+    await asyncio.gather(*background_tasks, return_exceptions=True)
+    await uart.disconnect()
+    logger.info("Shutdown complete")
+
 app = FastAPI(
     title="Keyswitch Tester API",
     version="1.0.0",
-    description="API for controlling and monitoring the keyswitch tester system"
+    description="API for controlling and monitoring the keyswitch tester system",
+    lifespan=lifespan
 )
 
 # Create API router with prefix
@@ -173,188 +201,179 @@ async def verify_pin(pin: str, db: Session = Depends(get_db)):
 # Background task for status monitoring
 async def monitor_status():
     """Background task for monitoring system status"""
-    while True:
-        try:
-            # Get latest reading from Arduino (if connected)
-            arduino_data = await uart.read_data() if uart.connected else None
-
-            async with get_db_context() as db:
-                system_state = await ensure_system_state(db)
-                settings = db.query(SystemSettings).first()
-                if not settings:
-                    logger.error("System settings not found")
-                    continue
+    try:
+        while True:
+            try:
+                # Get latest reading from Arduino (if connected)
+                arduino_data = await uart.read_data() if uart.connected else None
                 
-                # Check if timer has expired
-                if system_state.timerActive and system_state.timerEndTime:
-                    current_time = datetime.now(timezone.utc)
-                    logger.info(f"Checking timer expiration - Current time: {current_time.isoformat()}, End time: {system_state.timerEndTime.isoformat()}")
-                    if current_time >= system_state.timerEndTime:
-                        logger.info("Timer expired, stopping system")
-                        system_state.masterEnabled = False
-                        system_state.timerActive = False
-                        system_state.timerEndTime = None
-                        db.commit()
-                        
-                        # Send stop command to Arduino if connected
-                        if uart.connected:
-                            await uart.stop_all()
-                            
-                        # Broadcast the updated state
-                        await broadcast_status_update(db)
+                async with get_db_context() as db:
+                    system_state = await ensure_system_state(db)
+                    settings = db.query(SystemSettings).first()
+                    if not settings:
+                        logger.error("System settings not found")
                         continue
-                    else:
-                        logger.debug(f"Timer not expired yet. Time remaining: {(system_state.timerEndTime - current_time).total_seconds()} seconds")
-
-                # Process Arduino data if available
-                if arduino_data:
-                    # Handle supply voltage updates
-                    if 'supply_voltage' in arduino_data:
-                        system_state.supplyVoltage = arduino_data['supply_voltage']
-                        
-                        # Check voltage against cutoff
-                        if system_state.masterEnabled and system_state.supplyVoltage < settings.cutoffVoltage:
-                            current_time = datetime.now(timezone.utc)
-                            
-                            # If this is the first time voltage dropped below cutoff
-                            if voltage_monitor['low_voltage_start'] is None:
-                                voltage_monitor['low_voltage_start'] = current_time
-                                logger.warning(f"Supply voltage dropped below cutoff: {system_state.supplyVoltage}V < {settings.cutoffVoltage}V")
-                            
-                            # If voltage has been below cutoff for more than 5 seconds
-                            elif (current_time - voltage_monitor['low_voltage_start']).total_seconds() >= 5:
-                                logger.error(f"Supply voltage below cutoff for >5 seconds, stopping system")
-                                system_state.masterEnabled = False
-                                voltage_monitor['low_voltage_start'] = None  # Reset the timer
-                                
-                                # Send stop command to Arduino if connected
-                                if uart.connected:
-                                    await uart.stop_all()
-                        else:
-                            # Reset the low voltage timer if voltage is above cutoff
-                            if voltage_monitor['low_voltage_start'] is not None:
-                                logger.info(f"Supply voltage restored: {system_state.supplyVoltage}V")
-                                voltage_monitor['low_voltage_start'] = None
-                        
-                        db.commit()
                     
-                    # Handle station current readings
-                    elif all(k in arduino_data for k in ['station_id', 'motor_current', 'switch_current']):
-                        station = db.query(Station).filter_by(id=arduino_data['station_id']).first()
-                        if station:
-                            settings = db.query(SystemSettings).first()
-                            if not settings:
-                                logger.error("System settings not found")
-                                continue
-                            
-                            # Update current readings
-                            station.motorCurrent = arduino_data['motor_current']
-                            station.switchCurrent = arduino_data['switch_current']
-                            station.lastUpdated = datetime.now(timezone.utc)
-                            station.currentCycles += 1
-                            
-                            # Check for failures
-                            if station.motorCurrent > settings.motorCurrentThreshold:
-                                station.motorFailures += 1
-                                logger.warning(f"Station {station.id} motor failure detected")
-                            if station.switchCurrent > settings.switchCurrentThreshold:
-                                station.switchFailures += 1
-                                logger.warning(f"Station {station.id} switch failure detected")
-                            
-                            # Auto-disable if limits reached
-                            if (station.currentCycles >= settings.cycleLimit or
-                                station.motorFailures >= settings.motorFailureThreshold or
-                                station.switchFailures >= settings.switchFailureThreshold):
-                                station.enabled = False
-                                logger.info(f"Station {station.id} auto-disabled due to limits reached")
-                            
+                    # Check if timer has expired
+                    if system_state.timerActive and system_state.timerEndTime:
+                        current_time = datetime.now(timezone.utc)
+                        logger.info(f"Checking timer expiration - Current time: {current_time.isoformat()}, End time: {system_state.timerEndTime.isoformat()}")
+                        if current_time >= system_state.timerEndTime:
+                            logger.info("Timer expired, stopping system")
+                            system_state.masterEnabled = False
+                            system_state.timerActive = False
+                            system_state.timerEndTime = None
                             db.commit()
                             
-                            # Record history
-                            history = SystemHistory(
-                                station_id=station.id,
-                                currentCycles=station.currentCycles,
-                                motorFailures=station.motorFailures,
-                                switchFailures=station.switchFailures,
-                                motorCurrent=station.motorCurrent,
-                                switchCurrent=station.switchCurrent,
-                                supplyVoltage=system_state.supplyVoltage,
-                                masterEnabled=system_state.masterEnabled,
-                                cycleLimit=settings.cycleLimit,
-                                cyclesPerMinute=settings.cyclesPerMinute
-                            )
-                            db.add(history)
+                            # Send stop command to Arduino if connected
+                            if uart.connected:
+                                await uart.stop_all()
+                            
+                            # Broadcast the updated state
+                            await broadcast_status_update(db)
+                            continue
+                        else:
+                            logger.debug(f"Timer not expired yet. Time remaining: {(system_state.timerEndTime - current_time).total_seconds()} seconds")
+
+                    # Process Arduino data if available
+                    if arduino_data:
+                        # Handle supply voltage updates
+                        if 'supply_voltage' in arduino_data:
+                            system_state.supplyVoltage = arduino_data['supply_voltage']
+                            
+                            # Check voltage against cutoff
+                            if system_state.masterEnabled and system_state.supplyVoltage < settings.cutoffVoltage:
+                                current_time = datetime.now(timezone.utc)
+                                
+                                # If this is the first time voltage dropped below cutoff
+                                if voltage_monitor['low_voltage_start'] is None:
+                                    voltage_monitor['low_voltage_start'] = current_time
+                                    logger.warning(f"Supply voltage dropped below cutoff: {system_state.supplyVoltage}V < {settings.cutoffVoltage}V")
+                                
+                                # If voltage has been below cutoff for more than 5 seconds
+                                elif (current_time - voltage_monitor['low_voltage_start']).total_seconds() >= 5:
+                                    logger.error(f"Supply voltage below cutoff for >5 seconds, stopping system")
+                                    system_state.masterEnabled = False
+                                    voltage_monitor['low_voltage_start'] = None  # Reset the timer
+                                    
+                                    # Send stop command to Arduino if connected
+                                    if uart.connected:
+                                        await uart.stop_all()
+                            else:
+                                # Reset the low voltage timer if voltage is above cutoff
+                                if voltage_monitor['low_voltage_start'] is not None:
+                                    logger.info(f"Supply voltage restored: {system_state.supplyVoltage}V")
+                                    voltage_monitor['low_voltage_start'] = None
+                            
                             db.commit()
-                
-                # Broadcast updates to all connected clients
-                await broadcast_status_update(db)
-                
-        except asyncio.CancelledError:
-            logger.info("Monitor status task cancelled")
-            break
-        except Exception as e:
-            logger.error(f"Error in status monitoring: {str(e)}")
-            await asyncio.sleep(1)  # Wait longer on error
+                        
+                        # Handle station current readings
+                        elif all(k in arduino_data for k in ['station_id', 'motor_current', 'switch_current']):
+                            station = db.query(Station).filter_by(id=arduino_data['station_id']).first()
+                            if station:
+                                settings = db.query(SystemSettings).first()
+                                if not settings:
+                                    logger.error("System settings not found")
+                                    continue
+                                
+                                # Update current readings
+                                station.motorCurrent = arduino_data['motor_current']
+                                station.switchCurrent = arduino_data['switch_current']
+                                station.lastUpdated = datetime.now(timezone.utc)
+                                station.currentCycles += 1
+                                
+                                # Check for failures
+                                if station.motorCurrent > settings.motorCurrentThreshold:
+                                    station.motorFailures += 1
+                                    logger.warning(f"Station {station.id} motor failure detected")
+                                if station.switchCurrent > settings.switchCurrentThreshold:
+                                    station.switchFailures += 1
+                                    logger.warning(f"Station {station.id} switch failure detected")
+                                
+                                # Auto-disable if limits reached
+                                if (station.currentCycles >= settings.cycleLimit or
+                                    station.motorFailures >= settings.motorFailureThreshold or
+                                    station.switchFailures >= settings.switchFailureThreshold):
+                                    station.enabled = False
+                                    logger.info(f"Station {station.id} auto-disabled due to limits reached")
+                                
+                                db.commit()
+                                
+                                # Record history
+                                history = SystemHistory(
+                                    station_id=station.id,
+                                    currentCycles=station.currentCycles,
+                                    motorFailures=station.motorFailures,
+                                    switchFailures=station.switchFailures,
+                                    motorCurrent=station.motorCurrent,
+                                    switchCurrent=station.switchCurrent,
+                                    supplyVoltage=system_state.supplyVoltage,
+                                    masterEnabled=system_state.masterEnabled,
+                                    cycleLimit=settings.cycleLimit,
+                                    cyclesPerMinute=settings.cyclesPerMinute
+                                )
+                                db.add(history)
+                                db.commit()
+                    
+                    # Broadcast updates to all connected clients
+                    await broadcast_status_update(db)
+                    
+            except asyncio.CancelledError:
+                logger.info("Monitor status task cancelled")
+                return  # Exit cleanly on cancellation
+            except Exception as e:
+                logger.error(f"Error in status monitoring: {str(e)}")
+                await asyncio.sleep(1)  # Wait longer on error
+            
+            await asyncio.sleep(UPDATE_FREQUENCY)
+    except asyncio.CancelledError:
+        logger.info("Monitor status task cancelled")
+        return  # Exit cleanly on cancellation
 
 # Background task for sending state to Arduino
 async def send_arduino_state():
     """Background task for sending system state to Arduino"""
-    while True:
-        try:
-            # Skip if Arduino is not connected
-            if not uart.connected:
-                await asyncio.sleep(UPDATE_FREQUENCY)
-                continue
-                
-            async with get_db_context() as db:
-                system_state = db.query(SystemState).first()
-                settings = db.query(SystemSettings).first()
-                
-                if not all([system_state, settings]):
-                    logger.error("Missing system state or settings")
-                    await asyncio.sleep(1)
+    try:
+        while True:
+            try:
+                # Skip if Arduino is not connected
+                if not uart.connected:
+                    await asyncio.sleep(UPDATE_FREQUENCY)
                     continue
-                
-                # Get list of enabled station IDs
-                enabled_stations = [
-                    station.id 
-                    for station in db.query(Station).filter_by(enabled=True).all()
-                ]
-                
-                # Send current state to Arduino
-                await uart.send_state(
-                    enabled_stations=enabled_stations,
-                    speed=settings.cyclesPerMinute,
-                    master_enabled=system_state.masterEnabled
-                )
-                
-        except asyncio.CancelledError:
-            logger.info("Send Arduino state task cancelled")
-            break
-        except Exception as e:
-            logger.error(f"Error sending state to Arduino: {str(e)}")
-            await asyncio.sleep(1)
-        
-        await asyncio.sleep(UPDATE_FREQUENCY)
-
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    # Initialize database
-    init_db()
-    # Connect to Arduino
-    if not await uart.connect():
-        logger.error("Failed to connect to Arduino!")
-    # Start background tasks
-    asyncio.create_task(monitor_status())
-    asyncio.create_task(send_arduino_state())
-    
-    logger.info("Application startup complete")
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    await uart.disconnect()
+                    
+                async with get_db_context() as db:
+                    system_state = db.query(SystemState).first()
+                    settings = db.query(SystemSettings).first()
+                    
+                    if not all([system_state, settings]):
+                        logger.error("Missing system state or settings")
+                        await asyncio.sleep(1)
+                        continue
+                    
+                    # Get list of enabled station IDs
+                    enabled_stations = [
+                        station.id 
+                        for station in db.query(Station).filter_by(enabled=True).all()
+                    ]
+                    
+                    # Send current state to Arduino
+                    await uart.send_state(
+                        enabled_stations=enabled_stations,
+                        speed=settings.cyclesPerMinute,
+                        master_enabled=system_state.masterEnabled
+                    )
+                    
+            except asyncio.CancelledError:
+                logger.info("Send Arduino state task cancelled")
+                return  # Exit cleanly on cancellation
+            except Exception as e:
+                logger.error(f"Error sending state to Arduino: {str(e)}")
+                await asyncio.sleep(1)
+            
+            await asyncio.sleep(UPDATE_FREQUENCY)
+    except asyncio.CancelledError:
+        logger.info("Send Arduino state task cancelled")
+        return  # Exit cleanly on cancellation
 
 # WebSocket endpoint - keep this at root level
 @app.websocket("/ws")
@@ -542,4 +561,15 @@ app.include_router(api_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    import signal
+    
+    # Configure uvicorn to handle signals properly
+    config = uvicorn.Config(
+        app=app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="debug",
+        loop="asyncio"
+    )
+    server = uvicorn.Server(config)
+    server.run() 
