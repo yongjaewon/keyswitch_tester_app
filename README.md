@@ -1,21 +1,42 @@
-# Keyswitch Tester App
+# Ignition Switch Tester App
 
-A full-stack application for testing mechanical keyboard switches, featuring real-time monitoring and data collection.
+A full-stack application for testing ignition switches (key-operated rotary switches), featuring real-time monitoring and data collection.
 
 ## Features
 
-- Real-time monitoring of switch testing stations
-- Customizable test parameters
-- Current and voltage monitoring
-- Failure detection for both mechanical and electrical issues
-- Test cycle counting and limits
+- Real-time monitoring of up to 4 testing stations
+- Customizable test parameters:
+  - Motor current threshold
+  - Switch current threshold
+  - Cycle limits
+  - Cycles per minute
+  - Supply voltage cutoff
+- Automatic failure detection:
+  - Motor current monitoring
+  - Switch current monitoring
+  - Cycle counting
+- Test control features:
+  - Master enable/disable
+  - Individual station control
+  - Timer functionality (up to 99 hours)
+  - Auto-stop on failures or limits
+- Real-time data collection and history tracking
 - Dark/Light theme support
-- Timer functionality for test duration control
+- WebSocket-based real-time updates
+- Automatic reconnection handling
 
 ## Project Structure
 
-- `frontend/` - SvelteKit web application
-- `backend/` - Python backend server
+- `frontend/` - SvelteKit web application with TypeScript
+  - Real-time monitoring interface
+  - Test control panel
+  - Settings management
+  - Connection state handling
+- `backend/` - Python FastAPI server
+  - WebSocket communication
+  - Arduino serial communication
+  - SQLite database for state and history
+  - Background tasks for monitoring
 - `.venv/` - Python virtual environment
 
 ## Prerequisites
@@ -23,6 +44,8 @@ A full-stack application for testing mechanical keyboard switches, featuring rea
 - Node.js (v18 or higher)
 - Python 3.8+
 - pip (Python package manager)
+- Arduino-compatible microcontroller
+- USB serial connection to Arduino
 
 ## Setup
 
@@ -43,6 +66,18 @@ pip install -r requirements.txt
 3. Start the backend server:
 ```bash
 python main.py
+```
+The database will be automatically created and initialized with default settings:
+- Default PIN: "1234"
+- Default cycles per minute: 6
+- Default cutoff voltage: 11.1V
+- Default current thresholds: 100A (motor), 5A (switch)
+- Default cycle limit: 100,000
+- Default failure thresholds: 10 (both motor and switch)
+
+Note: If you need to reset the database to default values at any time:
+```bash
+python init_database.py --reset
 ```
 
 ### Frontend
@@ -67,6 +102,16 @@ npm run build
 
 - Frontend runs on http://localhost:5173 by default
 - Backend API runs on http://localhost:8000 by default
+- WebSocket connection on ws://localhost:8000/ws
+- Arduino communication on /dev/ttyUSB0 (default) at 115200 baud
+
+## Hardware Requirements
+
+- Arduino-compatible microcontroller
+- Current sensors for each station (motor and switch)
+- Voltage sensor for supply monitoring
+- Servo motors for key rotation
+- USB serial connection to host computer
 
 ## License
 

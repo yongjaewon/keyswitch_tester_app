@@ -26,6 +26,8 @@
  * ```
  */
 declare module '$env/static/private' {
+	export const VITE_API_URL: string;
+	export const VITE_WS_URL: string;
 	export const USER: string;
 	export const SSH_CLIENT: string;
 	export const npm_config_user_agent: string;
@@ -118,6 +120,8 @@ declare module '$env/static/public' {
  */
 declare module '$env/dynamic/private' {
 	export const env: {
+		VITE_API_URL: string;
+		VITE_WS_URL: string;
 		USER: string;
 		SSH_CLIENT: string;
 		npm_config_user_agent: string;

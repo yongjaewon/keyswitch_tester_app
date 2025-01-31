@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from starlette.websockets import WebSocketDisconnect
+from dotenv import load_dotenv
 
 from database import get_db, init_db
 from models import Station, SystemSettings, SystemState, SystemHistory
@@ -25,9 +26,12 @@ from schemas import (
     SuccessResponse
 )
 
+# Load environment variables
+load_dotenv()
+
 # Configure structured logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -36,34 +40,42 @@ logger = logging.getLogger(__name__)
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 UPDATE_FREQUENCY = float(os.getenv("UPDATE_FREQUENCY", "0.5"))
 MAX_TIMER_HOURS = int(os.getenv("MAX_TIMER_HOURS", "24"))
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
+SERIAL_PORT = os.getenv("SERIAL_PORT", "/dev/ttyUSB0")
+BAUD_RATE = int(os.getenv("BAUD_RATE", "115200"))
 
 # Initialize FastAPI app
 background_tasks = []
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     # Initialize database
     init_db()
-    # Connect to Arduino
-    if not await uart.connect():
-        logger.error("Failed to connect to Arduino!")
+    
+    # Initialize UART service
+    uart_service = UARTService()
+    await uart_service.connect(port=SERIAL_PORT, baudrate=BAUD_RATE)
+    
+    # Initialize WebSocket manager
+    websocket_manager = WebSocketManager()
+    
+    # Store services in app state
+    app.state.uart_service = uart_service
+    app.state.websocket_manager = websocket_manager
+    app.state.system_state = SystemState()
+    
     # Start background tasks
-    background_tasks.append(asyncio.create_task(monitor_status()))
-    background_tasks.append(asyncio.create_task(send_arduino_state()))
+    background_tasks.append(asyncio.create_task(monitor_status(app)))
     
-    logger.info("Application startup complete")
-    
-    yield  # Server is running
-    
-    # Shutdown
-    logger.info("Shutting down application...")
-    # Cancel all background tasks
-    for task in background_tasks:
-        task.cancel()
-    await asyncio.gather(*background_tasks, return_exceptions=True)
-    await uart.disconnect()
-    logger.info("Shutdown complete")
+    try:
+        yield
+    finally:
+        # Cleanup
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+        await uart_service.disconnect()
 
 app = FastAPI(
     title="Keyswitch Tester API",
@@ -199,13 +211,13 @@ async def verify_pin(pin: str, db: Session = Depends(get_db)):
     return True
 
 # Background task for status monitoring
-async def monitor_status():
+async def monitor_status(app: FastAPI):
     """Background task for monitoring system status"""
     try:
         while True:
             try:
                 # Get latest reading from Arduino (if connected)
-                arduino_data = await uart.read_data() if uart.connected else None
+                arduino_data = await app.state.uart_service.read_data() if app.state.uart_service.connected else None
                 
                 async with get_db_context() as db:
                     system_state = await ensure_system_state(db)
@@ -227,8 +239,8 @@ async def monitor_status():
                             db.commit()
                             
                             # Send stop command to Arduino if connected
-                            if uart.connected:
-                                await uart.stop_all()
+                            if app.state.uart_service.connected:
+                                await app.state.uart_service.stop_all()
                             
                             # Broadcast the updated state
                             await broadcast_status_update(db)
@@ -258,8 +270,8 @@ async def monitor_status():
                                     voltage_monitor['low_voltage_start'] = None  # Reset the timer
                                     
                                     # Send stop command to Arduino if connected
-                                    if uart.connected:
-                                        await uart.stop_all()
+                                    if app.state.uart_service.connected:
+                                        await app.state.uart_service.stop_all()
                             else:
                                 # Reset the low voltage timer if voltage is above cutoff
                                 if voltage_monitor['low_voltage_start'] is not None:
@@ -567,8 +579,8 @@ if __name__ == "__main__":
     # Configure uvicorn to handle signals properly
     config = uvicorn.Config(
         app=app,
-        host="0.0.0.0",
-        port=8000,
+        host=HOST,
+        port=PORT,
         log_level="debug",
         loop="asyncio"
     )

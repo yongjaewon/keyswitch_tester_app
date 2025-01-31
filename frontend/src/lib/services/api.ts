@@ -50,7 +50,7 @@ export async function initializeWebSocket(isManualRetry: boolean = false) {
     reconnectAttempts = 0;
   }
 
-  ws = new WebSocket('ws://192.168.75.77:8000/ws');
+  ws = new WebSocket(import.meta.env.VITE_WS_URL);
 
   ws.onopen = async () => {
     console.log('WebSocket connected');
@@ -130,7 +130,7 @@ export function sendMessage(type: string, data: any) {
 }
 
 // API endpoints
-const API_BASE_URL = 'http://192.168.75.77:8000/api';
+const API_BASE_URL = `${import.meta.env.VITE_API_URL}/api`;
 
 // HTTP request helper
 async function fetchWithError(url: string, options: RequestInit = {}) {
