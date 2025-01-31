@@ -37,7 +37,9 @@ A full-stack application for testing ignition switches (key-operated rotary swit
   - Arduino serial communication
   - SQLite database for state and history
   - Background tasks for monitoring
-- `.venv/` - Python virtual environment
+- `requirements.txt` - Python package dependencies (used to create virtual environment)
+
+Note: The `.venv` directory will be created locally when you follow the setup instructions. It contains the Python virtual environment and is not included in the repository.
 
 ## Prerequisites
 
