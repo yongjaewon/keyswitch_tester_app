@@ -1,4 +1,5 @@
 import type { AppState } from '../stores/appStore';
+import { connectionStore } from '../stores/connectionStore';
 
 // Types for API requests and responses
 interface SystemSettings {
@@ -42,14 +43,33 @@ type MessageHandler = (data: any) => void;
 const messageHandlers: { [key: string]: MessageHandler[] } = {};
 
 // Initialize WebSocket connection
-export function initializeWebSocket() {
+export async function initializeWebSocket(isManualRetry: boolean = false) {
   if (ws) return;
+
+  if (isManualRetry) {
+    reconnectAttempts = 0;
+  }
 
   ws = new WebSocket('ws://192.168.75.77:8000/ws');
 
-  ws.onopen = () => {
+  ws.onopen = async () => {
     console.log('WebSocket connected');
+    connectionStore.setConnected();
     reconnectAttempts = 0;
+    
+    // Load initial data
+    try {
+      const [settings, status] = await Promise.all([
+        api.getSettings(),
+        api.getStatus()
+      ]);
+      // Once we have initial data, mark as loaded
+      connectionStore.setDataLoaded();
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      connectionStore.setDisconnected('Failed to load initial data');
+      ws?.close();
+    }
   };
 
   ws.onmessage = (event) => {
@@ -67,19 +87,23 @@ export function initializeWebSocket() {
   ws.onclose = () => {
     console.log('WebSocket disconnected');
     ws = null;
+    connectionStore.setDisconnected();
 
     // Try to reconnect if we haven't exceeded max attempts
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      reconnectAttempts++;
-      console.log(`Reconnecting... Attempt ${reconnectAttempts}`);
-      setTimeout(initializeWebSocket, RECONNECT_DELAY);
+        reconnectAttempts++;
+        connectionStore.setReconnecting(reconnectAttempts);
+        console.log(`Reconnecting... Attempt ${reconnectAttempts}`);
+        setTimeout(initializeWebSocket, RECONNECT_DELAY);
     } else {
-      console.error('Max reconnection attempts reached');
+        console.error('Max reconnection attempts reached');
+        connectionStore.setMaxAttemptsReached();
     }
   };
 
   ws.onerror = (error) => {
     console.error('WebSocket error:', error);
+    connectionStore.setDisconnected('Connection error occurred');
   };
 }
 

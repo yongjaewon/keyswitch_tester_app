@@ -53,7 +53,11 @@
   <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 shadow-xl">
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-2xl font-bold text-gray-900 dark:text-white">Set Timer</h2>
-      <button on:click={closeModal} class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+      <button 
+        on:click={closeModal} 
+        class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+        aria-label="Close timer modal"
+      >
         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
@@ -65,8 +69,11 @@
       <div class="flex items-center justify-center gap-6 p-4">
         <!-- Hours -->
         <div class="flex flex-col items-center">
-          <button on:click={incrementHours} 
-                  class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
+          <button 
+            on:click={incrementHours} 
+            class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            aria-label="Increase hours"
+          >
             <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
             </svg>
@@ -76,8 +83,11 @@
               {editingHours.toString().padStart(2, '0')}
             </span>
           </div>
-          <button on:click={decrementHours}
-                  class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
+          <button 
+            on:click={decrementHours}
+            class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            aria-label="Decrease hours"
+          >
             <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
             </svg>
@@ -89,8 +99,11 @@
 
         <!-- Minutes -->
         <div class="flex flex-col items-center">
-          <button on:click={incrementMinutes}
-                  class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
+          <button 
+            on:click={incrementMinutes}
+            class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            aria-label="Increase minutes"
+          >
             <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
             </svg>
@@ -100,8 +113,11 @@
               {editingMinutes.toString().padStart(2, '0')}
             </span>
           </div>
-          <button on:click={decrementMinutes}
-                  class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
+          <button 
+            on:click={decrementMinutes}
+            class="p-4 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            aria-label="Decrease minutes"
+          >
             <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
             </svg>
